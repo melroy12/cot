@@ -1,11 +1,12 @@
 use cot::db::{Auto, ForeignKey};
-use cot::form::fields::{SelectChoice, SelectField};
+use cot::form::fields::SelectChoice;
 use cot::form::{
     AsFormField, Form, FormContext, FormErrorTarget, FormField, FormFieldValidationError,
     FormResult,
 };
 use cot::test::TestRequestBuilder;
-use cot_macros::model;
+use cot_macros::SelectChoice as DeriveSelectChoice;
+use cot_macros::{AsFormField, model};
 
 #[derive(Debug, Form)]
 struct MyForm {
@@ -160,61 +161,14 @@ async fn foreign_key_field_to_field_value() {
     assert_eq!(field_value, "456");
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, DeriveSelectChoice, AsFormField)]
 enum Priority {
+    #[select_choice(id = "low", name = "Low Priority")]
     Low,
+    #[select_choice(id = "medium", name = "Medium Priority")]
     Medium,
+    #[select_choice(id = "high", name = "High Priority")]
     High,
-}
-
-impl SelectChoice for Priority {
-    fn default_choices() -> Vec<Self> {
-        vec![Self::Low, Self::Medium, Self::High]
-    }
-
-    fn from_str(s: &str) -> Result<Self, FormFieldValidationError> {
-        match s {
-            "low" => Ok(Self::Low),
-            "medium" => Ok(Self::Medium),
-            "high" => Ok(Self::High),
-            _ => Err(FormFieldValidationError::invalid_value(s.to_owned())),
-        }
-    }
-
-    fn id(&self) -> String {
-        match self {
-            Self::Low => "low".to_string(),
-            Self::Medium => "medium".to_string(),
-            Self::High => "high".to_string(),
-        }
-    }
-
-    fn to_string(&self) -> String {
-        match self {
-            Self::Low => "Low Priority".to_string(),
-            Self::Medium => "Medium Priority".to_string(),
-            Self::High => "High Priority".to_string(),
-        }
-    }
-}
-
-impl AsFormField for Priority {
-    type Type = SelectField<Self>;
-
-    fn clean_value(field: &Self::Type) -> Result<Self, FormFieldValidationError> {
-        if let Some(value) = field.value() {
-            if value.is_empty() {
-                return Err(FormFieldValidationError::Required);
-            }
-            Self::from_str(value)
-        } else {
-            Err(FormFieldValidationError::Required)
-        }
-    }
-
-    fn to_field_value(&self) -> String {
-        self.id()
-    }
 }
 
 #[derive(Debug, Form)]
@@ -274,4 +228,58 @@ async fn select_field_context_display() {
     assert!(form_rendered.contains("value=\"low\""));
     assert!(form_rendered.contains("value=\"medium\""));
     assert!(form_rendered.contains("value=\"high\""));
+}
+
+#[cot::test]
+async fn derive_macro_comparison() {
+    // Test that our derived Priority enum works exactly the same as manual implementation
+
+    // Test basic functionality
+    assert_eq!(Priority::Low.id(), "low");
+    assert_eq!(Priority::Medium.id(), "medium");
+    assert_eq!(Priority::High.id(), "high");
+
+    assert_eq!(Priority::Low.to_string(), "Low Priority");
+    assert_eq!(Priority::Medium.to_string(), "Medium Priority");
+    assert_eq!(Priority::High.to_string(), "High Priority");
+
+    // Test from_str
+    assert_eq!(Priority::from_str("low").unwrap(), Priority::Low);
+    assert_eq!(Priority::from_str("medium").unwrap(), Priority::Medium);
+    assert_eq!(Priority::from_str("high").unwrap(), Priority::High);
+    assert!(Priority::from_str("invalid").is_err());
+
+    // Test default_choices
+    let choices = Priority::default_choices();
+    assert_eq!(choices.len(), 3);
+    assert!(choices.contains(&Priority::Low));
+    assert!(choices.contains(&Priority::Medium));
+    assert!(choices.contains(&Priority::High));
+
+    // Test AsFormField integration
+    assert_eq!(Priority::High.to_field_value(), "high");
+}
+
+// Example of a simpler enum that uses defaults
+#[derive(Debug, Clone, PartialEq, DeriveSelectChoice, AsFormField)]
+enum Status {
+    Active,
+    Inactive,
+    Pending,
+}
+
+#[cot::test]
+async fn simple_enum_with_defaults() {
+    // When no custom id/name is specified, it should use the variant name
+    assert_eq!(Status::Active.id(), "Active");
+    assert_eq!(Status::Inactive.id(), "Inactive");
+    assert_eq!(Status::Pending.id(), "Pending");
+
+    assert_eq!(Status::Active.to_string(), "Active");
+    assert_eq!(Status::Inactive.to_string(), "Inactive");
+    assert_eq!(Status::Pending.to_string(), "Pending");
+
+    assert_eq!(Status::from_str("Active").unwrap(), Status::Active);
+    assert_eq!(Status::from_str("Inactive").unwrap(), Status::Inactive);
+    assert_eq!(Status::from_str("Pending").unwrap(), Status::Pending);
 }
